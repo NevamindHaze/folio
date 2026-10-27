@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Folio
+GenericName=PDF Reader
+Comment=Fast, clean PDF reader with highlighting and OCR
+Exec=folio %f
+Icon=folio
+Terminal=false
+Categories=Office;Viewer;
+MimeType=application/pdf;image/png;image/jpeg;image/tiff;application/epub+zip;
+Keywords=pdf;reader;viewer;highlight;ocr;
+StartupWMClass=folio

@@ -136,6 +136,24 @@ def test_search():
         w.close()
 
 
+def test_protected_pdf_stays_protected():
+    from unittest import mock
+    from PyQt6.QtWidgets import QFileDialog, QInputDialog
+    with tempfile.TemporaryDirectory() as d:
+        path, copy = os.path.join(d, "locked.pdf"), os.path.join(d, "copy.pdf")
+        doc = fitz.open()
+        doc.new_page().insert_text((72, 100), TEXT, fontsize=12)
+        doc.save(path, encryption=fitz.PDF_ENCRYPT_AES_256, owner_pw="pw", user_pw="pw")
+        with mock.patch.object(QInputDialog, "getText", return_value=("pw", True)):
+            w = _window(path)
+        with mock.patch.object(QFileDialog, "getSaveFileName", return_value=(copy, "")):
+            assert w.save_as()
+        assert fitz.open(copy).needs_pass  # the copy keeps its password
+        assert TEXT in w.doc[0].get_text()  # and Folio reopened it unlocked
+        w.dirty = False
+        w.close()
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

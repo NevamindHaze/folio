@@ -28,6 +28,7 @@ class MainWindow(QMainWindow):
         self.doc = None
         self.path = None          # file on disk, None for unsaved (e.g. an opened image)
         self.dirty = False
+        self.password = None      # what unlocked a protected PDF, to keep it protected when saving
         self.ocr_worker = None
         self.theme = self.settings.value("theme", "light")
         self.invert_pages = self.settings.value("invertPages", True, type=bool)
@@ -352,24 +353,28 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.warning(self, "Folio", f"Couldn't open {os.path.basename(path)}:\n{e}")
             return False
+        password = None
         if doc.needs_pass:
             while True:
                 pw, ok = QInputDialog.getText(self, "Password", f"{os.path.basename(path)} is protected. Password:",
                                               QLineEdit.EchoMode.Password)
                 if not ok:
+                    doc.close()
                     return False
                 if doc.authenticate(pw):
+                    password = pw
                     break
         save_path = path
         if not doc.is_pdf:
             # images, XPS, EPUB…: convert to PDF in memory so they can be OCR'd and annotated
             doc = fitz.open("pdf", doc.convert_to_pdf())
             save_path = None
+            password = None
         self._stop_ocr()
         self._remember_position()
         if self.doc:
             self.doc.close()
-        self.doc, self.path, self.dirty = doc, save_path, save_path is None
+        self.doc, self.path, self.dirty, self.password = doc, save_path, save_path is None, password
         self.source_name = os.path.basename(path)
         self.settings.setValue("lastDir", os.path.dirname(path))
         self._add_recent(path)
@@ -386,6 +391,8 @@ class MainWindow(QMainWindow):
         """Reopen self.path after a full save, keeping the reading position."""
         page, zoom, fit = self.view.current_page(), self.view.zoom, self.view.fit
         doc = fitz.open(self.path)
+        if self.password:
+            doc.authenticate(self.password)
         self.doc.close()
         self.doc = doc
         self.view.set_document(doc)
@@ -403,7 +410,7 @@ class MainWindow(QMainWindow):
                 self.doc.saveIncr()
             else:
                 tmp = self.path + ".folio-tmp"
-                self.doc.save(tmp, garbage=1, deflate=True)
+                self._write(tmp)
                 os.replace(tmp, self.path)
                 self._reload()
         except Exception as e:
@@ -413,6 +420,13 @@ class MainWindow(QMainWindow):
         self._update_title()
         self.status("Saved")
         return True
+
+    def _write(self, path):
+        if self.password:
+            # KEEP only works without garbage collection; any other full save writes the PDF unprotected.
+            self.doc.save(path, encryption=fitz.PDF_ENCRYPT_KEEP)
+        else:
+            self.doc.save(path, garbage=1, deflate=True)
 
     def save_as(self):
         if not self.doc:
@@ -427,7 +441,7 @@ class MainWindow(QMainWindow):
         try:
             if self.path and os.path.abspath(path) == self.path:
                 return self.save()
-            self.doc.save(path, garbage=1, deflate=True)
+            self._write(path)
         except Exception as e:
             QMessageBox.warning(self, "Folio", f"Couldn't save:\n{e}")
             return False
